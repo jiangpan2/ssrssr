@@ -14,19 +14,47 @@ jobs:
       - name: Install dpkg-dev
         run: sudo apt update && sudo apt install dpkg-dev -y
 
-      - name: Generate index
+      - name: Fix broken deb permissions
+        run: |
+          cd debs
+          for deb in *.deb; do
+            # 测试deb是否能正常解析
+            if ! dpkg-deb -I "$deb" >/dev/null 2>&1; then
+              echo "Fixing permissions for: $deb"
+              mkdir -p /tmp/debfix
+              cd /tmp/debfix
+              # 解压deb组件
+              ar x "$GITHUB_WORKSPACE/debs/$deb"
+              # 修复control权限
+              mkdir -p control_dir
+              tar -xzf control.tar.gz -C control_dir 2>/dev/null || true
+              chmod -R 644 control_dir/*
+              chmod 755 control_dir
+              # 重新打包control
+              tar -czf control.tar.gz -C control_dir .
+              # 重新打包deb
+              ar rcs "$deb" debian-binary control.tar.gz data.tar.* 2>/dev/null || true
+              # 替换原文件
+              mv "$deb" "$GITHUB_WORKSPACE/debs/$deb"
+              cd "$GITHUB_WORKSPACE/debs"
+              rm -rf /tmp/debfix
+              echo "Fixed: $deb"
+            fi
+          done
+
+      - name: Generate Packages index
         run: |
           dpkg-scanpackages debs /dev/null > Packages
           gzip -k -f Packages
 
-      - name: Commit index files
+      - name: Commit and push
         run: |
           git config --global user.name "RepoAutoBot"
           git config --global user.email "bot@github.com"
-          git add Packages Packages.gz
+          git add -A
           if git diff --cached --quiet; then
-            echo "No index changes, skip push"
+            echo "No changes, skip push"
             exit 0
           fi
-          git commit -m "Auto update Packages index"
+          git commit -m "Auto update repo index"
           git push
