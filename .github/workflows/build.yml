@@ -1,0 +1,29 @@
+name: Auto Build Cydia Repo
+on:
+  push:
+    branches: [ main ]
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Pull code
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          token: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Install dpkg tools
+        run: sudo apt update && sudo apt install dpkg-dev -y
+
+      - name: Generate Packages index
+        run: |
+          dpkg-scanpackages debs /dev/null > Packages
+          gzip -k -f Packages
+
+      - name: Auto commit & push index
+        run: |
+          git config --global user.name "RepoAutoBot"
+          git config --global user.email "autobuild@github.com"
+          git add Packages Packages.gz
+          git diff --quiet && git diff --staged --quiet || git commit -m "Auto generate repo index"
+          git push
